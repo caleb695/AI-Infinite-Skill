@@ -1,0 +1,12 @@
+{
+  "name": "infinite",
+  "version": "1.0.0",
+  "description": "Never stop: audit, improve, verify, and repeat the user's task forever until they explicitly say stop.",
+  "author": {
+    "name": "caleb695"
+  },
+  "homepage": "https://github.com/caleb695/AI-Infinite-Skill",
+  "repository": "https://github.com/caleb695/AI-Infinite-Skill",
+  "license": "MIT",
+  "keywords": ["autonomy", "iteration", "self-improvement", "loop", "never-stop", "infinite"]
+}
