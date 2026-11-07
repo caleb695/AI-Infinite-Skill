@@ -42,6 +42,8 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+import shlex
+import shutil
 from pathlib import Path
 
 GUARD_DIR = Path(".openhands") / "guard"
@@ -582,6 +584,61 @@ def detect_gates(project: Path) -> list[dict]:
     return gates
 
 
+def probe_gate(gate: dict) -> tuple[bool, str]:
+    """Return (available, reason).
+
+    A gate whose runner is not installed can never pass, so it must not be armed:
+    that would deny every finish for a reason the agent cannot fix. Probing is
+    static (no test execution), so it costs milliseconds at install time.
+    """
+    command = str(gate.get("command") or "").strip()
+    if not command:
+        return False, "empty command"
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return True, "unparsed command"
+    if not tokens:
+        return False, "empty command"
+
+    # `python3 -m <module>` / `python -m <module>`
+    if len(tokens) >= 3 and re.match(r"^python[0-9.]*$", tokens[0]) and tokens[1] == "-m":
+        module = tokens[2]
+        try:
+            proc = subprocess.run(
+                [tokens[0], "-c", f"import importlib.util,sys;sys.exit(0 if importlib.util.find_spec({module!r}) else 1)"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                return False, f"python module '{module}' is not installed"
+        except (OSError, subprocess.TimeoutExpired):
+            return False, f"cannot run {tokens[0]}"
+        return True, "ok"
+
+    # npm/pnpm/yarn/cargo/go/make: the runner itself must exist
+    if shutil.which(tokens[0]) is None:
+        return False, f"'{tokens[0]}' is not installed"
+    # `npm test` etc. need the project's script to exist
+    package = read_json(Path(gate.get("project") or ".") / "package.json")
+    return True, "ok"
+
+
+def partition_gates(project: Path, gates: list[dict]) -> tuple[list[dict], list[dict]]:
+    available, skipped = [], []
+    for gate in gates:
+        gate = dict(gate)
+        gate.setdefault("project", str(project))
+        ok, reason = probe_gate(gate)
+        gate.pop("project", None)
+        if ok:
+            available.append(gate)
+        else:
+            skipped.append({"name": gate.get("name"), "command": gate.get("command"), "reason": reason})
+    return available, skipped
+
+
 def parse_gates(specs: list[str]) -> list[dict]:
     gates = []
     for spec in specs:
@@ -615,7 +672,16 @@ def cmd_policy(args) -> int:
     if mode not in {"required", "always", "allow-when-green", "disabled"}:
         print(f"unknown mode: {mode}", file=sys.stderr)
         return 2
-    print(encode_policy(build_policy(project, mode, gates, int(args.require_rounds))))
+    gates, skipped = partition_gates(project, gates)
+    for item in skipped:
+        print(
+            f"warning: skipping gate '{item['name']}' ({item['command']}): {item['reason']}",
+            file=sys.stderr,
+        )
+    policy = build_policy(project, mode, gates, int(args.require_rounds))
+    if skipped:
+        policy["skipped_gates"] = skipped
+    print(encode_policy(policy))
     return 0
 
 
@@ -625,12 +691,17 @@ def cmd_arm(args) -> int:
     if not gates and not args.no_gates:
         existing = read_json(project / GUARD_DIR / "config.json")
         gates = existing.get("gates") or detect_gates(project)
+    gates, skipped = partition_gates(project, gates)
+    for item in skipped:
+        print(f"warning: skipping gate '{item['name']}': {item['reason']}", file=sys.stderr)
     policy = build_policy(
         project,
         args.mode or "required",
         gates,
         int(args.require_rounds if args.require_rounds is not None else 1),
     )
+    if skipped:
+        policy["skipped_gates"] = skipped
     write_json(project / GUARD_DIR / "config.json", {**policy, "policy_blob": encode_policy(policy)})
     (project / GUARD_DIR / "DISARMED").unlink(missing_ok=True)
     write_json(project / GUARD_DIR / "attempts.json", {"count": 0, "last_round": None})
@@ -679,6 +750,10 @@ def cmd_status(args) -> int:
     print(f"mode       : {config.get('mode')}{' (disarmed)' if disarmed else ''}")
     print(f"armed at   : {config.get('armed_at')}")
     print(f"gates      : {', '.join(g['name'] for g in config.get('gates', [])) or 'none'}")
+    skipped = config.get("skipped_gates") or []
+    if skipped:
+        for item in skipped:
+            print(f"  skipped  : {item.get('name')} ({item.get('reason')})")
     print(f"rounds     : {ledger['rounds_total']} total / {ledger['rounds_since_arm']} since arming")
     print(f"last round : {ledger['last_round']} (verified: {ledger['last_verified']})")
     print(f"attempts   : {attempts.get('count', 0)} finish attempts recorded")

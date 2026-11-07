@@ -172,6 +172,33 @@ assert payload["decision"] == "deny"
 assert "Gates:" in payload.get("additionalContext", ""), payload
 PY2
 
+echo "== gate availability probing =="
+UNPASSABLE="$WORK/unpassable"
+mkdir -p "$UNPASSABLE"
+# A gate whose runner does not exist can never pass, so it must be skipped with a
+# warning rather than armed (which would deny every finish forever).
+OUT="$(python3 "$GUARD" --dir "$UNPASSABLE" policy --gate "missing:definitely-not-a-real-binary --run" 2>&1)"
+case "$OUT" in
+    *"skipping gate 'missing'"*) pass "unrunnable gate is skipped with a warning";;
+    *) fail "unrunnable gate was not skipped";;
+esac
+POLICY_JSON="$(printf '%s\n' "$OUT" | tail -1 | python3 -c "
+import base64, json, sys
+blob = sys.stdin.read().strip()
+blob += '=' * (-len(blob) % 4)
+print(json.dumps(json.loads(base64.urlsafe_b64decode(blob))))")"
+python3 - "$POLICY_JSON" <<'PY2' && pass "policy excludes the unrunnable gate" || fail "policy kept the unrunnable gate"
+import json, sys
+policy = json.loads(sys.argv[1])
+assert policy["gates"] == [], policy
+assert policy["skipped_gates"][0]["name"] == "missing", policy
+PY2
+OUT="$(python3 "$GUARD" --dir "$UNPASSABLE" policy --gate "ok:true" 2>&1)"
+case "$OUT" in
+    *warning*) fail "a runnable gate was skipped";;
+    *) pass "runnable gate is kept";;
+esac
+
 echo "== standalone (curl | bash) install =="
 RAWDIR="$WORK/raw/site/infinite"
 mkdir -p "$RAWDIR"

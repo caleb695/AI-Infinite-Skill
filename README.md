@@ -95,7 +95,9 @@ bash .agents/skills/infinite/scripts/install-openhands-hooks.sh --dir . --status
 ```
 
 The installer also self-checks: it simulates a finish attempt and fails loudly if
-it is not actually denied.
+it is not actually denied. Detected gates are probed first — a runner that is not
+installed (e.g. no `pytest`) is skipped with a warning rather than armed as a gate
+that could never pass.
 
 ## Use it
 
