@@ -89,7 +89,7 @@ tests pass` to end at a boundary. Say `continue` later to resume from the ledger
 ## Contents
 
 ```
-skills/infinite/
+infinite/
 ├── SKILL.md                          the loop contract and round procedure
 ├── commands/infinite.md              slash-command shim
 ├── references/

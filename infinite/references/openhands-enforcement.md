@@ -15,8 +15,11 @@ cannot change decide whether a run may finish.
 ## Install
 
 ```bash
-skills/infinite/scripts/install-openhands-hooks.sh --dir /path/to/project
+bash infinite/scripts/install-openhands-hooks.sh --dir /path/to/project
 ```
+
+Add `--install-skill` to also place the skill at `.agents/skills/infinite/`
+(`--scope user` for `~/.agents/skills/`).
 
 That single command:
 
@@ -119,8 +122,8 @@ stop phrase and re-arms on an infinite phrase.
 stop
 
 # or from your own terminal
-skills/infinite/scripts/install-openhands-hooks.sh --dir . --disarm
-skills/infinite/scripts/install-openhands-hooks.sh --dir . --uninstall
+bash infinite/scripts/install-openhands-hooks.sh --dir . --disarm
+bash infinite/scripts/install-openhands-hooks.sh --dir . --uninstall
 ```
 
 Both self-heal: even if the agent deleted the guard directory, these commands

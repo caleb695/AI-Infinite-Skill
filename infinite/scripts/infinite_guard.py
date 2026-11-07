@@ -185,9 +185,15 @@ def log_event(project: Path, event: str, **fields) -> None:
 
 
 def emit_deny(reason: str, context: str = "") -> int:
+    """Deny an operation.
+
+    OpenHands' Stop path forwards only ``additionalContext`` to the agent (the
+    ``reason`` goes to the UI/logs), so the actionable half of a denial must be
+    included in both fields.
+    """
     payload = {"decision": "deny", "reason": reason}
-    if context:
-        payload["additionalContext"] = context
+    additional = reason if not context else f"{reason}\n\n{context}"
+    payload["additionalContext"] = additional
     print(json.dumps(payload))
     return 2
 

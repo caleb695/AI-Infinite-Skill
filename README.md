@@ -46,29 +46,43 @@ minutes, never after an hour of unbounded work.
 
 ## Install
 
-### OpenHands
-
-Skills are read from these locations, in order of precedence:
+### One command (recommended)
 
 ```bash
-# per project (recommended)
+git clone https://github.com/caleb695/AI-Infinite-Skill
+bash AI-Infinite-Skill/infinite/scripts/install-openhands-hooks.sh --dir . --install-skill
+```
+
+That places the skill at `.agents/skills/infinite/` (the location OpenHands
+loads first), arms enforcement, and self-checks that a finish attempt is
+actually denied. Use `--scope user` to install into `~/.agents/skills/` instead,
+or `--no-arm` to install without enforcement.
+
+No clone needed — the installer can bootstrap itself:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caleb695/AI-Infinite-Skill/main/infinite/scripts/install-openhands-hooks.sh \
+  | bash -s -- --dir . --install-skill
+```
+
+### Or copy it by hand
+
+OpenHands scans, in priority order, `.agents/skills/`, `.openhands/skills/`, and
+the legacy `.openhands/microagents/` — in the working directory and, if it is a
+git repo, the repo root:
+
+```bash
 mkdir -p .agents/skills
-cp -r skills/infinite .agents/skills/infinite
-
-# or per user, for every conversation
-mkdir -p ~/.agents/skills
-cp -r skills/infinite ~/.agents/skills/infinite
+cp -r infinite .agents/skills/infinite          # project scope
+cp -r infinite ~/.agents/skills/infinite        # user scope, all projects
 ```
 
-Legacy `.openhands/skills/` and `.openhands/microagents/` directories are still
-supported by OpenHands and work too.
+Claude Code and other Agent Skills clients read the same `SKILL.md` from
+`.claude/skills/infinite`.
 
-### Claude Code or another Agent Skills client
-
-```bash
-mkdir -p .claude/skills
-cp -r skills/infinite .claude/skills/infinite
-```
+In Agent Canvas, enable it under **Customize > Skills** (`infinite`); headless
+and CLI runs load `.agents/skills/` automatically. Trigger it by typing
+`/infinite` in a message.
 
 ## Use it
 
@@ -99,11 +113,8 @@ Prompt rules are usually enough, but OpenHands [hooks](https://docs.openhands.de
 can enforce the loop at the harness level:
 
 ```bash
-# 1. install a Stop hook that denies "finish" while the loop is armed
-.agents/skills/infinite/scripts/install-openhands-hooks.sh --dir .
-
-# 2. arm the loop
-python3 .agents/skills/infinite/scripts/infinite_state.py arm
+# installs the guard, three hooks, and an immutable per-session policy
+bash .agents/skills/infinite/scripts/install-openhands-hooks.sh --dir .
 ```
 
 While `.infinite/ARMED` exists, every attempt to finish returns:
@@ -116,17 +127,17 @@ While `.infinite/ARMED` exists, every attempt to finish returns:
 }
 ```
 
-The hook does not just block — it restarts the loop with the current round number
-and next target injected into the agent's context.
+The deny does not just block — OpenHands sends the `additionalContext` back to
+the agent as a message and flips the run from `FINISHED` to `RUNNING`, so the
+loop restarts with the failing gates, round number, and next target in context.
 
-Disarm the moment the user says stop (always *before* writing the final summary,
-otherwise the agent cannot finish the turn):
+End it whenever you want:
 
 ```bash
-python3 .agents/skills/infinite/scripts/infinite_state.py disarm --reason "user said stop"
+bash .agents/skills/infinite/scripts/install-openhands-hooks.sh --dir . --disarm
 ```
 
-Details, safety notes, and manual verification: [`references/openhands-enforcement.md`](skills/infinite/references/openhands-enforcement.md).
+Details, safety notes, and manual verification: [`infinite/references/openhands-enforcement.md`](infinite/references/openhands-enforcement.md).
 
 ## Why it does not drift, stall, or fake progress
 
@@ -165,7 +176,7 @@ the owner's knowledge.
 
 ```
 AI-Infinite-Skill/
-├── skills/infinite/
+├── infinite/                        the skill directory itself
 │   ├── SKILL.md                     the loop contract and round procedure
 │   ├── README.md                    skill-level docs
 │   ├── commands/infinite.md         slash-command shim
@@ -185,13 +196,18 @@ AI-Infinite-Skill/
 ## Development
 
 ```bash
-bash tests/smoke.sh
+bash tests/smoke.sh              # enforcement, bypass attempts, install paths
+python3 tests/openhands_compat.py  # OpenHands loader + hook contract conformance
 ```
 
-Verifies the frontmatter, the state helper (init/log/status/report/disarm), the
-Stop hook (armed denies with exit 2 and valid JSON, disarmed allows with exit 0,
-discovery from subdirectories), and the installer (creates, is idempotent, and
-preserves existing hooks).
+The smoke suite covers the frontmatter, the ledger helper, the stop gate
+(failing gates, missing evidence, repeated attempts), nine agent bypass
+attempts, tampering with on-disk state, and the user-only disarm paths. The
+conformance suite re-implements OpenHands' actual loader and hook rules
+(name/directory matching, `^[a-z0-9]+(-[a-z0-9]+)*$`, description limits,
+snake_case event keys, exit-2 blocking, `additionalContext` delivery) and runs
+the installed hooks the way the SDK does — from an unrelated cwd, with the SDK's
+exact `HookEvent` JSON on stdin.
 
 ## License
 

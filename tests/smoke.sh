@@ -8,7 +8,7 @@
 
 set -uo pipefail
 
-SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../skills/infinite" && pwd)"
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../infinite" && pwd)"
 S="$SKILL_DIR/scripts"
 STATE="$S/infinite_state.py"
 GUARD="$S/infinite_guard.py"
@@ -144,6 +144,33 @@ check "$(stop_code "$PROJ" "$POLICY")" "2" "user says '/infinite' -> armed again
 check "$(stop_code "$PROJ" "$POLICY")" "0" "installer --disarm allows finish"
 "$INSTALL" --dir "$PROJ" --uninstall >/dev/null 2>&1
 grep -q "infinite" "$PROJ/.openhands/hooks.json" && fail "uninstall left hook entries" || pass "uninstall removes hook entries"
+
+echo "== install paths =="
+SLOT="$WORK/slot"
+mkdir -p "$SLOT"
+"$INSTALL" --dir "$SLOT" --install-skill --gate "tests:true" >/dev/null 2>&1
+[ -f "$SLOT/.agents/skills/infinite/SKILL.md" ] && pass "installs into .agents/skills/infinite" \
+    || fail "--install-skill did not create the skill slot"
+[ -x "$SLOT/.agents/skills/infinite/scripts/infinite_guard.py" ] && pass "installed scripts are executable" \
+    || fail "installed scripts lost the execute bit"
+
+PROJ2="$WORK/proj2"
+mkdir -p "$PROJ2"
+cp -r "$SKILL_DIR" "$PROJ2/skillcopy"
+( cd / && bash "$PROJ2/skillcopy/scripts/install-openhands-hooks.sh" --dir "$PROJ2" --gate "tests:true" >/dev/null 2>&1 ) \
+    && pass "installer works from an unrelated cwd" || fail "installer failed from an unrelated cwd"
+STOP_CMD="$(python3 -c "
+import json;print(json.load(open('$PROJ2/.openhands/hooks.json'))['stop'][0]['hooks'][0]['command'])")"
+case "$STOP_CMD" in /*) pass "hook command uses an absolute path";; *) fail "hook command is not absolute: $STOP_CMD";; esac
+OUT="$(printf '{"event_type":"Stop","session_id":"s","working_dir":"%s","metadata":{"reason":"agent_finished"}}' "$PROJ2" \
+      | ( cd /tmp && OPENHANDS_PROJECT_DIR="$PROJ2" eval "$STOP_CMD" ) 2>/dev/null)"
+[ -n "$OUT" ] && pass "hook runs from an unrelated cwd" || fail "hook produced no output from /tmp"
+python3 - "$OUT" <<'PY2' && pass "deny payload carries gate detail for the agent" || fail "payload lacks gate detail"
+import json, sys
+payload = json.loads(sys.argv[1])
+assert payload["decision"] == "deny"
+assert "Gates:" in payload.get("additionalContext", ""), payload
+PY2
 
 echo
 if [ "$FAILED" -eq 0 ]; then echo "all tests passed"; else echo "FAILURES PRESENT" >&2; fi
