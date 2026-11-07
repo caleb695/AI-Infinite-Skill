@@ -13,8 +13,9 @@
 # Works three ways:
 #   1. from a clone:      bash infinite/scripts/install-openhands-hooks.sh --dir .
 #   2. from anywhere:     bash /path/to/infinite/scripts/install-openhands-hooks.sh --dir .
-#   3. standalone:        curl -fsSL <raw-url>/scripts/install-openhands-hooks.sh | bash -s -- --dir .
-#      (fetches the rest of the files from the same release automatically)
+#   3. standalone:        curl -fsSL <raw-url>/infinite/scripts/install-openhands-hooks.sh | bash -s -- --dir .
+#      (fetches the rest of the files from the same commit automatically; override
+#       the source with INFINITE_RAW_BASE=<skill-dir-url> INFINITE_REF=<branch|tag|sha>)
 #
 # This script is the user's control surface. The agent is blocked from running it
 # (and from running the guard directly) by the PreToolUse hook installed here.
@@ -42,7 +43,14 @@ DISARM_REASON=""
 INSTALL_SKILL=0
 SCOPE="project"
 REF="${INFINITE_REF:-main}"
-RAW_BASE="${INFINITE_RAW_BASE:-}"
+# Base URL of the skill directory (the one containing SKILL.md and scripts/).
+# Only used when this script runs standalone (curl | bash) with no siblings.
+# A value ending in /scripts is accepted too, for convenience.
+RAW_BASE="${INFINITE_RAW_BASE:-https://raw.githubusercontent.com/caleb695/AI-Infinite-Skill/$REF/infinite}"
+RAW_BASE="${RAW_BASE%/}"
+case "$RAW_BASE" in
+    */scripts) RAW_BASE="${RAW_BASE%/scripts}" ;;
+esac
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -80,16 +88,17 @@ require_python() {
     }
 }
 
-# Copy a skill file from the local checkout, or fetch it when this script was
-# run standalone (curl | bash) and has no siblings on disk.
+# Copy a file from the local checkout, or fetch it when this script was run
+# standalone (curl | bash) with no siblings on disk. `rel` is relative to the
+# skill root (e.g. scripts/infinite_guard.py).
 fetch_or_copy() {
     local rel="$1" dest="$2"
     mkdir -p "$(dirname "$dest")"
-    if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$rel" ]; then
-        cp "$SCRIPT_DIR/$rel" "$dest"
+    if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/../$rel" ]; then
+        cp "$SCRIPT_DIR/../$rel" "$dest"
         return 0
     fi
-    local base="${RAW_BASE:-https://raw.githubusercontent.com/caleb695/AI-Infinite-Skill/$REF/infinite/scripts}"
+    local base="$RAW_BASE"
     if ! curl -fsSL --max-time 60 "$base/$rel" -o "$dest"; then
         echo "could not obtain $rel (tried $base/$rel)." >&2
         echo "Run this script from a checkout of the skill instead:" >&2
@@ -98,19 +107,8 @@ fetch_or_copy() {
     fi
 }
 
-# Copy or fetch a file that lives in the skill directory (not scripts/).
 fetch_or_copy_skill() {
-    local rel="$1" dest="$2"
-    mkdir -p "$(dirname "$dest")"
-    if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/../$rel" ]; then
-        cp "$SCRIPT_DIR/../$rel" "$dest"
-        return 0
-    fi
-    local base="${RAW_BASE:-https://raw.githubusercontent.com/caleb695/AI-Infinite-Skill/$REF/infinite}"
-    if ! curl -fsSL --max-time 60 "$base/$rel" -o "$dest"; then
-        echo "could not obtain $rel (tried $base/$rel)" >&2
-        exit 1
-    fi
+    fetch_or_copy "$1" "$2"
 }
 
 install_skill_files() {
@@ -161,8 +159,8 @@ fi
 # directory, which must never prevent the user from stopping.
 if [ "$ACTION" != "install" ] && [ "$ACTION" != "status" ]; then
     require_python
-    fetch_or_copy infinite_guard.py "$GUARD"
-    fetch_or_copy infinite_guard.py "$HOOK_DIR/infinite_guard.py"
+    fetch_or_copy scripts/infinite_guard.py "$GUARD"
+    fetch_or_copy scripts/infinite_guard.py "$HOOK_DIR/infinite_guard.py"
     chmod +x "$GUARD" "$HOOK_DIR/infinite_guard.py"
 fi
 
@@ -195,12 +193,12 @@ fi
 
 require_python
 
-fetch_or_copy infinite_guard.py "$GUARD"
-fetch_or_copy infinite_guard.py "$HOOK_DIR/infinite_guard.py"
-fetch_or_copy stop_hook.sh "$HOOK_DIR/infinite-stop.sh"
-fetch_or_copy pretool_hook.sh "$HOOK_DIR/infinite-pretool.sh"
-fetch_or_copy userprompt_hook.sh "$HOOK_DIR/infinite-userprompt.sh"
-fetch_or_copy infinite_state.py "$HOOK_DIR/infinite_state.py"
+fetch_or_copy scripts/infinite_guard.py "$GUARD"
+fetch_or_copy scripts/infinite_guard.py "$HOOK_DIR/infinite_guard.py"
+fetch_or_copy scripts/stop_hook.sh "$HOOK_DIR/infinite-stop.sh"
+fetch_or_copy scripts/pretool_hook.sh "$HOOK_DIR/infinite-pretool.sh"
+fetch_or_copy scripts/userprompt_hook.sh "$HOOK_DIR/infinite-userprompt.sh"
+fetch_or_copy scripts/infinite_state.py "$HOOK_DIR/infinite_state.py"
 chmod +x "$GUARD" "$HOOK_DIR"/infinite-*.sh "$HOOK_DIR/infinite_state.py" "$HOOK_DIR/infinite_guard.py"
 echo "installed guard:  $GUARD"
 echo "installed hooks:  $HOOK_DIR/infinite-{stop,pretool,userprompt}.sh"

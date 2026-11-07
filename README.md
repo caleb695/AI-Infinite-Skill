@@ -58,12 +58,15 @@ loads first), arms enforcement, and self-checks that a finish attempt is
 actually denied. Use `--scope user` to install into `~/.agents/skills/` instead,
 or `--no-arm` to install without enforcement.
 
-No clone needed — the installer can bootstrap itself:
+No clone needed — the installer bootstraps itself (it fetches its own files from
+the same commit):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/caleb695/AI-Infinite-Skill/main/infinite/scripts/install-openhands-hooks.sh \
   | bash -s -- --dir . --install-skill
 ```
+
+Pin a tag or commit for reproducibility with `INFINITE_REF=<ref>`.
 
 ### Or copy it by hand
 
@@ -83,6 +86,16 @@ Claude Code and other Agent Skills clients read the same `SKILL.md` from
 In Agent Canvas, enable it under **Customize > Skills** (`infinite`); headless
 and CLI runs load `.agents/skills/` automatically. Trigger it by typing
 `/infinite` in a message.
+
+### Check the install
+
+```bash
+bash .agents/skills/infinite/scripts/install-openhands-hooks.sh --dir . --status
+# project / mode / gates / rounds / finish attempts / last hook decisions
+```
+
+The installer also self-checks: it simulates a finish attempt and fails loudly if
+it is not actually denied.
 
 ## Use it
 

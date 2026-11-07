@@ -144,7 +144,28 @@ echo '{"event_type":"Stop","working_dir":"'"$PWD"'"}' \
   | OPENHANDS_PROJECT_DIR="$PWD" bash .openhands/hooks/infinite-stop.sh --policy "$POLICY"; echo "exit=$?"
 ```
 
-`tests/smoke.sh` automates all of this, including nine attack attempts.
+`tests/smoke.sh` automates the enforcement checks (including nine attack
+attempts); `tests/openhands_compat.py` verifies the loader and hook contract
+above and runs the hooks from an unrelated cwd with the SDK's exact payload.
+
+## Verified against the OpenHands SDK source
+
+These are not assumptions; they were read out of `openhands-sdk` and are covered
+by `tests/openhands_compat.py`:
+
+| Behaviour | Where it comes from | Consequence for this skill |
+| --- | --- | --- |
+| `SKILL.md` is discovered only as an immediate child of a skills dir | `sdk/skills/utils.py:find_skill_md_directories` | the skill ships as `infinite/SKILL.md`, installed to `.agents/skills/infinite/` |
+| Strict name rules: must equal the directory, `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64 chars | `sdk/skills/utils.py:validate_skill_name` | name is `infinite`, directory is `infinite` |
+| `description` is the AgentSkills required field, truncated past 1024 chars | `sdk/skills/skill.py:MAX_DESCRIPTION_LENGTH` | description is ~470 chars |
+| `triggers:` (a YAML list) becomes a `KeywordTrigger`; matching is whole-token, case-insensitive | `sdk/skills/skill.py:_keyword_matches` | `/infinite`, "never stop", "keep going" all fire |
+| A `paths:` key takes precedence and turns the skill into a path rule | `sdk/skills/skill.py:_create_skill_from_metadata` | never set `paths:` here |
+| Hook `command` runs with `shell=True`, `timeout`, and the hook's `cwd` = project dir | `sdk/hooks/executor.py` | commands use absolute quoted paths |
+| Exit code `2` blocks; stdout `{"decision":"deny"}` also blocks | `sdk/hooks/executor.py` | both are sent |
+| Stop hook blocking flips the run from `FINISHED` back to `RUNNING` | `sdk/conversation/impl/local_conversation.py` | the loop continues automatically |
+| **The Stop path forwards only `additionalContext`** to the agent (role `user`, source `environment`); `reason` is not forwarded | `sdk/hooks/conversation_hooks.py:run_stop` | denials put the gate results and next target in **both** fields |
+| Stdin is a `HookEvent`: `event_type`, `tool_name`, `tool_input`, `tool_response`, `message`, `session_id`, `working_dir`, `metadata` | `sdk/hooks/types.py` | the guard tolerates every field and unknown keys |
+| `OPENHANDS_PROJECT_DIR` is exported to hooks | `sdk/hooks/executor.py` | used to locate the project |
 
 ## What enforcement still cannot do
 

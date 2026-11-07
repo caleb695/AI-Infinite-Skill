@@ -172,6 +172,46 @@ assert payload["decision"] == "deny"
 assert "Gates:" in payload.get("additionalContext", ""), payload
 PY2
 
+echo "== standalone (curl | bash) install =="
+RAWDIR="$WORK/raw/site/infinite"
+mkdir -p "$RAWDIR"
+cp -r "$SKILL_DIR/." "$RAWDIR/"
+# Pick a free port so a leftover server from an interrupted run cannot poison
+# this test.
+PORT="$(python3 - <<'PY2'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY2
+)"
+( cd "$WORK/raw" && nohup python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$WORK/raw.pid" )
+READY=0
+for _ in $(seq 1 20); do
+    if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/site/infinite/SKILL.md" 2>/dev/null; then READY=1; break; fi
+    sleep 0.25
+done
+[ "$READY" -eq 1 ] || fail "local test server did not start on port $PORT"
+STAND="$WORK/standalone"
+mkdir -p "$STAND/proj"
+if curl -fsS "http://127.0.0.1:$PORT/site/infinite/scripts/install-openhands-hooks.sh" -o "$STAND/fetched.sh" 2>/dev/null; then
+    pass "installer is fetchable on its own (curl | bash prerequisite)"
+    if INFINITE_RAW_BASE="http://127.0.0.1:$PORT/site/infinite/scripts" \
+        bash "$STAND/fetched.sh" --dir "$STAND/proj" --install-skill --gate "tests:true" >/dev/null 2>&1; then
+        pass "standalone install fetches its own files"
+    else
+        fail "standalone install failed"
+    fi
+    [ -f "$STAND/proj/.agents/skills/infinite/SKILL.md" ] && pass "standalone install places the skill" \
+        || fail "standalone install did not place the skill"
+    [ -x "$STAND/proj/.openhands/hooks/infinite-stop.sh" ] && pass "standalone install arms enforcement" \
+        || fail "standalone install did not wire hooks"
+else
+    fail "could not fetch the installer over HTTP"
+fi
+kill "$(cat "$WORK/raw.pid" 2>/dev/null)" 2>/dev/null || true
+
 echo
 if [ "$FAILED" -eq 0 ]; then echo "all tests passed"; else echo "FAILURES PRESENT" >&2; fi
 exit "$FAILED"
