@@ -1,0 +1,7 @@
+# Enforcement state for the `infinite` skill - machine-local, never commit.
+.openhands/guard/
+.infinite/
+
+# Optional: hook wiring is usually committed so the user's setting persists.
+# Remove this line if you want the wiring committed too.
+# .openhands/hooks/
